@@ -10,7 +10,7 @@ from pinecone import Pinecone
 
 #API KEY ASSIGNMENT
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")       #openAI API key
-PINECONE_API_KEY = os.getenv('PINECONE_API_KEY')        #PineCone API key
+#PINECONE_API_KEY = os.getenv('PINECONE_API_KEY')        #PineCone API key
 
 indexName = "archie"
 
