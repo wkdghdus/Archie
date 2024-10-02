@@ -1,11 +1,11 @@
 import os
-from openai import OpenAI
-from dotenv import load_dotenv, find_dotenv
+# from openai import OpenAI
+# from dotenv import load_dotenv, find_dotenv
+# from pinecone import Pinecone
 from langchain_community.document_loaders import PyPDFLoader
 from langchain_pinecone import PineconeVectorStore
 from langchain_openai import OpenAIEmbeddings
 from langchain_text_splitters import CharacterTextSplitter
-from pinecone import Pinecone
 
 
 #API KEY ASSIGNMENT
