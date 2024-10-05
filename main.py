@@ -6,9 +6,12 @@ from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from google.cloud import firestore
 from langchain_google_firestore import FirestoreChatMessageHistory
-from langchain.chains import create_history_aware_retriever, create_retrieval_chain
+from langchain.chains.history_aware_retriever import create_history_aware_retriever
+from langchain.chains.retrieval import create_retrieval_chain
 from langchain.chains.combine_documents import create_stuff_documents_chain
 from langchain_core.prompts import MessagesPlaceholder, ChatPromptTemplate
+from langchain_core.tools import Tool
+from langchain.agents import AgentExecutor, create_react_agent
 from pinecone import Pinecone, ServerlessSpec
 from langchain_pinecone import PineconeVectorStore
 
@@ -27,6 +30,9 @@ MAX_TOKENS = 1000
 PROJECT_ID = "archie-fff03"
 SESSION_ID = "user_session_1"
 COLLECTION_NAME = "chat_history"
+
+#for pinecone vector store
+VECTORSTORE_INDEX_NAME = "archie"
 ####--------CONSTANTS/상수 ends--------####
 
 
@@ -52,99 +58,122 @@ print("initializing Finished")
 
 #init pincone/vector store 
 print("Initializing vectorstore")
-indexName = "archie"
-db = PineconeVectorStore(index=indexName, embedding=embeddings)
-print("Initializing Finished")
+db = PineconeVectorStore(index= VECTORSTORE_INDEX_NAME, embedding=embeddings)
 
-#vector store retriever
-retriever = db.as_retriever()
+print("Initializing Finished")
 ####--------initialization ends--------####
 
 
-####--------Creating Rag model--------####
-# Contextualize question prompt
-# This system prompt helps the AI understand that it should reformulate the question
-# based on the chat history to make it a standalone question
-contextualize_q_system_prompt = (
-    "Given a chat history and the latest user question "
-    "which might reference context in the chat history, "
-    "formulate a standalone question which can be understood "
-    "without the chat history. Do NOT answer the question, just "
-    "reformulate it if needed and otherwise return it as is."
-)
+def getRelevantOutput(newInput, chatHistory, answerList):
+    ####--------Creating vector store retrievor--------####
 
-# Create a prompt template for contextualizing questions
-contextualize_q_prompt = ChatPromptTemplate.from_messages(
-    [
-        ("system", contextualize_q_system_prompt),
-        MessagesPlaceholder("chat_history"),
-        ("human", "{input}"),
-    ]
-)
+    #vector store retriever
+    #connected to scientific data vector db
+    retriever = db.as_retriever()
 
-# Create a history-aware retriever
-# This uses the LLM to help reformulate the question based on chat history
-history_aware_retriever = create_history_aware_retriever(
-    llm, retriever, contextualize_q_prompt
-)
+    # Contextualize question prompt
+    # This system prompt helps the AI understand that it should reformulate the question
+    # based on the chat history to make it a standalone question
+    contextualizeQSystemPrompt = prompt.contextual_q_system_prompt
 
-# Answer question prompt
-# This system prompt helps the AI understand that it should provide concise answers
-# based on the retrieved context and indicates what to do if the answer is unknown
-qa_system_prompt = (
-    "You are an assistant for question-answering tasks. Use "
-    "the following pieces of retrieved context to answer the "
-    "question. If you don't know the answer, just say that you "
-    "don't know. Use three sentences maximum and keep the answer "
-    "concise."
-    "\n\n"
-    "{context}"
-)
+    # Create a prompt template for contextualizing questions
+    contextualize_q_prompt = ChatPromptTemplate.from_messages(
+        [
+            ("system", contextualizeQSystemPrompt),
+            MessagesPlaceholder("chat_history"),
+            ("human", "{input}"),
+        ]
+    )
 
-# Create a prompt template for answering questions
-qa_prompt = ChatPromptTemplate.from_messages(
-    [
-        ("system", qa_system_prompt),
-        MessagesPlaceholder("chat_history"),
-        ("human", "{input}"),
-    ]
-)
+    # Create a history-aware retriever
+    # This uses the LLM to help reformulate the question based on chat history
+    history_aware_retriever = create_history_aware_retriever(
+        openAIClient, retriever, contextualize_q_prompt
+    )
+    ####--------Retriever creation ends--------####
 
-# Create a chain to combine documents for question answering
-# `create_stuff_documents_chain` feeds all retrieved context into the LLM
-question_answer_chain = create_stuff_documents_chain(llm, qa_prompt)
+    ####--------Creating question answering chain--------####
+    # Answer question prompt
+    # This system prompt helps the AI understand that it should provide concise answers
+    # based on the retrieved context and indicates what to do if the answer is unknown
+    qaSystemPrompt = prompt.qa_system_prompt
 
-# Create a retrieval chain that combines the history-aware retriever and the question answering chain
-rag_chain = create_retrieval_chain(history_aware_retriever, question_answer_chain)
+    # Create a prompt template for answering questions
+    qa_prompt = ChatPromptTemplate.from_messages(
+        [
+            ("system", qaSystemPrompt),
+            MessagesPlaceholder("chat_history"),
+            ("human", "{input}"),
+        ]
+    )
 
+    # Create a chain to combine documents for question answering
+    # `create_stuff_documents_chain` feeds all retrieved context into the LLM
+    question_answer_chain = create_stuff_documents_chain(openAIClient, qa_prompt)
 
+    # Create a retrieval chain that combines the history-aware retriever and the question answering chain
+    rag_chain = create_retrieval_chain(history_aware_retriever, question_answer_chain)
 
+    response = rag_chain.invoke({"input": newInput, "chat_history": chatHistory})
 
-def generateChat(chatHistory):
+    #append to the answer List
+    answerList.append({response['answer']})
 
-    response = openAIClient.invoke(chatHistory)
+    return answerList
+
+def listToString(docList):
+    ret = ""
+
+    for doc in docList:
+        ret = ret + doc
     
-    return response.content
+    return ret
+
+
+tools = [
+    Tool(
+        name="genenrate relevant insight",
+        func=getRelevantOutput,
+        description="appends the specific advice for the latest question to a list",
+    ),
+    Tool(
+        name="returns the list as a string",
+        func=listToString,
+        description="returns a string output when list is given"
+    ),
+]
+
+
+
+# Create the ReAct Agent with document store retriever
+agent = create_react_agent(
+    llm=openAIClient,
+    tools=tools,
+    prompt=prompt.AgentSystemPrompt,
+)
+
+agent_executor = AgentExecutor.from_agent_and_tools(
+    agent=agent, tools=tools, handle_parsing_errors=True, verbose=True,
+)
 
 def main():
-
-    chatHistory = [SystemMessage(prompt.systemPrompt)]
-
-    print("enter your question: ")
+    
+    chatHistory = cloudChatHistory 
 
     while True:
-        userInput = input("You: ")
-
-        if (userInput.lower == "quit"):
+        query = input("You: ")
+        if query.lower() == "exit":
             break
+        response = agent_executor.invoke(
+            {"input": query, "chat_history": chatHistory})
+        print(f"AI: {response['output']}")
 
-        chatHistory.append(HumanMessage(content = userInput))
-        response = generateChat(chatHistory)
-        print(response)
-        chatHistory.append(AIMessage(content = response))
-    
-    # add chat history to firebase firestore cloud 
-    firestoreClient.add_messages(chatHistory)
+        # Update history
+        chatHistory.append(HumanMessage(content=query))
+        chatHistory.append(AIMessage(content=response["output"]))
+        
+        # add chat history to firebase firestore cloud 
+        firestoreClient.add_messages(chatHistory)
 
 main()
 
