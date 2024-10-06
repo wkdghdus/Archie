@@ -11,7 +11,8 @@ from langchain.chains.retrieval import create_retrieval_chain
 from langchain.chains.combine_documents import create_stuff_documents_chain
 from langchain_core.prompts import MessagesPlaceholder, ChatPromptTemplate
 from langchain_core.tools import Tool
-from langchain.agents import AgentExecutor, create_react_agent
+from langchain.memory import ConversationBufferMemory
+from langchain.agents import AgentExecutor, create_structured_chat_agent, create_react_agent, create_tool_calling_agent
 from pinecone import Pinecone, ServerlessSpec
 from langchain_pinecone import PineconeVectorStore
 
@@ -59,12 +60,13 @@ print("initializing Finished")
 #init pincone/vector store 
 print("Initializing vectorstore")
 db = PineconeVectorStore(index= VECTORSTORE_INDEX_NAME, embedding=embeddings)
-
 print("Initializing Finished")
+
+responseList = []
 ####--------initialization ends--------####
 
 
-def getRelevantOutput(newInput, chatHistory, answerList):
+def getRelevantOutput(newInput, chatHistory):
     ####--------Creating vector store retrievor--------####
 
     #vector store retriever
@@ -117,9 +119,8 @@ def getRelevantOutput(newInput, chatHistory, answerList):
     response = rag_chain.invoke({"input": newInput, "chat_history": chatHistory})
 
     #append to the answer List
-    answerList.append({response['answer']})
+    responseList.append({response['answer']})
 
-    return answerList
 
 def listToString(docList):
     ret = ""
@@ -130,9 +131,28 @@ def listToString(docList):
     return ret
 
 
+# Retrieve the chat history from FirestoreChatMessageHistory and convert to list of base messages
+def getChatHistory(cloudChatHistory):
+    # Initialize a ConversationBufferMemory
+    memory = ConversationBufferMemory()
+
+    # Iterate over messages from cloud history and add to memory
+    for entry in cloudChatHistory.messages:
+        if entry["role"] == "user":
+            memory.chat_memory.add_message(HumanMessage(content=entry["content"]))
+        elif entry["role"] == "assistant":
+            memory.chat_memory.add_message(AIMessage(content=entry["content"]))
+
+    # Return the memory instance with all messages added
+    return memory
+
+def getResponseList():
+    return responseList
+
+####--------tools for the agent--------####
 tools = [
     Tool(
-        name="genenrate relevant insight",
+        name="generate relevant insight",
         func=getRelevantOutput,
         description="appends the specific advice for the latest question to a list",
     ),
@@ -141,39 +161,60 @@ tools = [
         func=listToString,
         description="returns a string output when list is given"
     ),
+    Tool(
+        name="get insight list",
+        func=getResponseList,
+        description="access the insight that were created by 'generate relevant insight', this should be used for the final insight output"
+    )
 ]
+####--------tools end--------####
 
 
+####--------creating agent--------####
+#creating prompt template
+agentSystemPrompt = ChatPromptTemplate.from_messages(
+    [
+        ("system", prompt.agentSystemPrompt),
+        MessagesPlaceholder("chat_history"),
+        ("human", "{input}"),
+    ]
+)
 
-# Create the ReAct Agent with document store retriever
-agent = create_react_agent(
-    llm=openAIClient,
-    tools=tools,
-    prompt=prompt.AgentSystemPrompt,
+# create_structured_chat_agent initializes a chat agent designed to interact using a structured prompt and tools
+# It combines the language model (llm), tools, and prompt to create an interactive agent
+agent = create_structured_chat_agent(
+    llm = openAIClient,
+    tools = tools,
+    prompt = agentSystemPrompt,
 )
 
 agent_executor = AgentExecutor.from_agent_and_tools(
-    agent=agent, tools=tools, handle_parsing_errors=True, verbose=True,
+    agent=agent, tools=tools, handle_parsing_errors=False, verbose=True,
 )
+####--------creating agent ends--------####
+
 
 def main():
     
-    chatHistory = cloudChatHistory 
+    chatHistory = getChatHistory(cloudChatHistory)
 
     while True:
-        query = input("You: ")
-        if query.lower() == "exit":
+        user_input = input("User: ")
+        if user_input.lower() == "exit":
             break
-        response = agent_executor.invoke(
-            {"input": query, "chat_history": chatHistory})
-        print(f"AI: {response['output']}")
 
-        # Update history
-        chatHistory.append(HumanMessage(content=query))
-        chatHistory.append(AIMessage(content=response["output"]))
+        # Add the user's message to the conversation memory
+        chatHistory.chat_memory.add_message(HumanMessage(content=user_input))
+
+        # Invoke the agent with the user input and the current chat history
+        response = agent_executor.invoke({"input": user_input, "chat_history": chatHistory.buffer_as_messages})
+        print("Bot:", response["output"])
+
+        # Add the agent's response to the conversation memory
+        chatHistory.chat_memory.add_message(AIMessage(content=response["output"]))
         
-        # add chat history to firebase firestore cloud 
-        firestoreClient.add_messages(chatHistory)
+    # add chat history to firebase firestore cloud 
+    firestoreClient.add_messages(chatHistory)
 
 main()
 
