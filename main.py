@@ -227,6 +227,9 @@ agent_executor = AgentExecutor.from_agent_and_tools(
 
 def main():
 
+    print("-"*100)
+    print("아치: 안녕하세요! Hello!")
+
     while True:
         user_input = input("User: ")
 
@@ -241,7 +244,7 @@ def main():
 
         # Invoke the agent with the user input and the current chat history
         response = agent_executor.invoke({"chat_history": chatHistory, "context": contextCombined, "input": user_input})
-        print("Bot:", response["output"])
+        print("아치:", response["output"])
 
         # Add the agent's response to the conversation memory
         chatHistory.append(AIMessage(content=response["output"]))
