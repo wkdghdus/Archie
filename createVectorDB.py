@@ -33,8 +33,6 @@ def loadDocAndAddEmbed(source, vectorStoreFromDoc):
         print("Failed to add embedding: "+ source)
 
 
-    
-
 
 def createVectorDB():
     vectorStore = PineconeVectorStore(index_name = indexName, embedding = embeddings)

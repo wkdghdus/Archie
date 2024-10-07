@@ -1,3 +1,5 @@
 .env
 __pycache__/
 Data/
+main2.py 
+prompt2.py

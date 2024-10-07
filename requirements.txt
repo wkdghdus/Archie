@@ -1,0 +1,11 @@
+os
+dotenv
+langchain
+langchain_openai
+langchain_google_firestore
+langchain_core
+langchain_pinecone
+openai
+google
+pydantic
+pinecone

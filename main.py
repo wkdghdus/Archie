@@ -55,14 +55,6 @@ print("initializing firestore")
 firestoreClient = firestore.Client(project = PROJECT_ID)
 print("initializing Finished")
 
-# print("initializing chat history")
-# cloudChatHistory = FirestoreChatMessageHistory(
-#     session_id = SESSION_ID,
-#     collection = COLLECTION_NAME,
-#     client = firestoreClient,
-# )
-# print("initializing Finished")
-
 #init pincone/vector store 
 print("Initializing vectorstore")
 db = PineconeVectorStore(index= VECTORSTORE_INDEX, embedding=embeddings)
@@ -70,17 +62,21 @@ print("Initializing Finished")
 
 insightList = []    # list for insight
 chatHistory = []    # list for chat history
+
+###########for cloud chat history storing ##########
+# print("initializing chat history")
+# cloudChatHistory = FirestoreChatMessageHistory(
+#     session_id = SESSION_ID,
+#     collection = COLLECTION_NAME,
+#     client = firestoreClient,
+# )
+# print("initializing Finished")
+###########for cloud chat history storing ##########
+
 ####--------initialization ends--------####
 
 
 ####--------Functions--------####
-def listToString(docList):
-    ret = ""
-    for doc in docList:
-        ret = ret + doc
-    
-    return ret
-
 
 # # Retrieve the chat history from FirestoreChatMessageHistory and convert to list of base messages
 # def getCloudChatHistory(cloudChatHistory):
@@ -96,6 +92,14 @@ def listToString(docList):
 
 #     # Return the memory instance with all messages added
 #     return memory
+
+
+def listToString(docList):
+    ret = ""
+    for doc in docList:
+        ret = ret + doc
+    
+    return ret
 
 
 def getInsightList():
@@ -135,7 +139,6 @@ def getRelevantOutput(newInput, chatHistory=chatHistory):
     # Answer question prompt
     # This system prompt helps the AI understand that it should provide concise answers
     # based on the retrieved context and indicates what to do if the answer is unknown
-
     qaSystemPrompt = prompt.qa_system_prompt
 
     # Create a prompt template for answering questions
@@ -148,7 +151,7 @@ def getRelevantOutput(newInput, chatHistory=chatHistory):
     )
 
     # Create a chain to combine documents for question answering
-    # `create_stuff_documents_chain` feeds all retrieved context into the LLM
+    # create_stuff_documents_chain feeds all retrieved context into the LLM
     question_answer_chain = create_stuff_documents_chain(openAIClient, qa_prompt)
 
     # Create a retrieval chain that combines the history-aware retriever and the question answering chain
@@ -161,10 +164,10 @@ def getRelevantOutput(newInput, chatHistory=chatHistory):
 
     return "insight has been generated, you are allowed to proceed to next process"
 
+##############used for structuredTool.from_function#################
 # class GetRelevantOutputArgs(BaseModel):
 #     newInput: str = Field(description="most recent user input")
 #     chatHistory: list = Field(description="chat history")
-
 
 
 ####--------tools for the agent--------####
@@ -217,7 +220,7 @@ agent = create_react_agent(
 )
 
 agent_executor = AgentExecutor.from_agent_and_tools(
-    agent=agent, tools=tools, handle_parsing_errors=True, verbose=True,
+    agent=agent, tools=tools, handle_parsing_errors=True, verbose=True, 
 )
 ####--------creating agent ends--------####
 
@@ -226,16 +229,15 @@ def main():
 
     while True:
         user_input = input("User: ")
+
         if user_input.lower() == "exit":
             break
         
         # Add the user's message to the conversation memory
         chatHistory.append(HumanMessage(content=user_input))
 
-
         # Define context separately if needed (e.g., additional information)
-        contextCombined = "This is additional context"  # Modify as needed, or set to an empty string if no context
-
+        contextCombined = "This is additional context"  
 
         # Invoke the agent with the user input and the current chat history
         response = agent_executor.invoke({"chat_history": chatHistory, "context": contextCombined, "input": user_input})
