@@ -78,4 +78,5 @@ python main.py
 
 어시스턴트는 JSON 형식의 응답을 제공하며, 각 제안은 연구 논문과 산업 보고서와 같은 신뢰할 수 있는 출처로 뒷받침됩니다.
 
-## 크레딧
+## 후기와 개인적인 개선점
+https://troubled-marten-623.notion.site/1185d47e5346807e9b4fe97b86b51f70
