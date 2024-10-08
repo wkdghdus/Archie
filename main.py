@@ -120,7 +120,7 @@ def getRelevantOutput(newInput, chatHistory=chatHistory):
     contextualizeQSystemPrompt = prompt.contextual_q_system_prompt
 
     # Create a prompt template for contextualizing questions
-    contextualize_q_prompt = ChatPromptTemplate.from_messages(
+    contextualizeQprompt = ChatPromptTemplate.from_messages(
         [
             ("system", contextualizeQSystemPrompt),
             MessagesPlaceholder("chat_history"),
@@ -131,7 +131,7 @@ def getRelevantOutput(newInput, chatHistory=chatHistory):
     # Create a history-aware retriever
     # This uses the LLM to help reformulate the question based on chat history
     history_aware_retriever = create_history_aware_retriever(
-        openAIClient, retriever, contextualize_q_prompt
+        openAIClient, retriever, contextualizeQprompt
     )
     ####--------Retriever creation ends--------####
 
@@ -231,19 +231,19 @@ def main():
     print("아치: 안녕하세요! Hello!")
 
     while True:
-        user_input = input("User: ")
+        userInput = input("User: ")
 
-        if user_input.lower() == "exit":
+        if userInput.lower() == "exit":
             break
         
         # Add the user's message to the conversation memory
-        chatHistory.append(HumanMessage(content=user_input))
+        chatHistory.append(HumanMessage(content=userInput))
 
         # Define context separately if needed (e.g., additional information)
-        contextCombined = "This is additional context"  
+        contextCombined =  ""
 
         # Invoke the agent with the user input and the current chat history
-        response = agent_executor.invoke({"chat_history": chatHistory, "context": contextCombined, "input": user_input})
+        response = agent_executor.invoke({"chat_history": chatHistory, "context": contextCombined, "input": userInput})
         print("아치:", response["output"])
 
         # Add the agent's response to the conversation memory

@@ -203,6 +203,7 @@ If the user’s input is unclear or incomplete, rely on previous chat history an
 
 Remember that your goal is to provide highly relevant and scientifically backed advice, written in the language the user speaks. Ensure that each suggestion is supported by real and verifiable sources, and that the conversation flow reflects the guided structure used in the interior design consultation.
 
+{context}
 
 """
 
