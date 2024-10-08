@@ -162,27 +162,39 @@ def getRelevantOutput(newInput, chatHistory=chatHistory):
     #append to the answer List
     insightList.append({response['answer']})
 
-    return "insight has been generated, you are allowed to proceed to next process"
+    return response['answer']
 
-##############used for structuredTool.from_function#################
-# class GetRelevantOutputArgs(BaseModel):
-#     newInput: str = Field(description="most recent user input")
-#     chatHistory: list = Field(description="chat history")
+#############used for structuredTool.from_function#################
+class GetRelevantOutputArgs(BaseModel):
+    newInput: str = Field(description="most recent user input")
+    chatHistory: list = Field(description="chat history")
+
+"""
+Getting this error when using  StructuredTool.from_function I don't know how to solve it
+
+pydantic_core._pydantic_core.ValidationError: 1 validation error for GetRelevantOutputArgs
+chatHistory
+  Field required [type=missing, input_value={'newInput': '카페야",...response_metadata={})]'}, input_type=dict]
+
+If I use normal tools the Agent goes into infinite loop of thought chain, using getRelevantOutput nonstop 
+- I don't know if Structured tools will debug this error, but at least want to try.
+
+"""
 
 
 ####--------tools for the agent--------####
 tools = [
-    # StructuredTool.from_function(
-    #     name="append relevant insight",
-    #     func=getRelevantOutput,
-    #     description="appends the specific advice for the latest question to a list that will be used in the final insight output. Returns True if done successfully. If you get True from this tool, move on to the next thought",
-    #     args_schema=GetRelevantOutputArgs,
-    # ),
-    Tool(
+    StructuredTool.from_function(
         name="append relevant insight",
         func=getRelevantOutput,
-        description="appends the specific advice for the latest question to a list that will be used in the final insight output. When given latest user input and chat history Returns String if done successfully. If you get string from this tool, move on to the next thought",
+        description="appends the specific advice for the latest question to a list that will be used in the final insight output. When given latest user input and chat history Returns String if done successfully. This tool has two separate parameters, one string and one list. they should not be comebined when returning action input. If this tool return a string, move on to the next thought",
+        args_schema=GetRelevantOutputArgs,
     ),
+    # Tool(
+    #     name="append relevant insight",
+    #     func=getRelevantOutput,
+    #     description="appends the specific advice for the latest question to a list that will be used in the final insight output. When given latest user input and chat history Returns String if done successfully. If this tool return a string, move on to the next thought",
+    # ),
     Tool(
         name="returns the list as a string",
         func=listToString,
