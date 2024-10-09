@@ -60,7 +60,7 @@ print("Initializing vectorstore")
 db = PineconeVectorStore(index= VECTORSTORE_INDEX, embedding=embeddings)
 print("Initializing Finished")
 
-insightList = []    # list for insight
+sourceList = []    # list for needed documents (in chunks)
 chatHistory = []    # list for chat history
 
 ###########for cloud chat history storing ##########
@@ -102,11 +102,11 @@ def listToString(docList):
     return ret
 
 
-def getInsightList():
-    return insightList
+def getSourceList():
+    return sourceList
 
 
-def getRelevantOutput(newInput, chatHistory=chatHistory):
+def getRelevantSources(newInput, chatHistory=chatHistory):
 
     ####--------Creating vector store retrievor--------####
 
@@ -135,76 +135,38 @@ def getRelevantOutput(newInput, chatHistory=chatHistory):
     )
     ####--------Retriever creation ends--------####
 
-    ####--------Creating question answering chain--------####
-    # Answer question prompt
-    # This system prompt helps the AI understand that it should provide concise answers
-    # based on the retrieved context and indicates what to do if the answer is unknown
-    qaSystemPrompt = prompt.qa_system_prompt
-
-    # Create a prompt template for answering questions
-    qa_prompt = ChatPromptTemplate.from_messages(
-        [
-            ("system", qaSystemPrompt),
-            MessagesPlaceholder("chat_history"),
-            ("human", "{input}"),
-        ]
-    )
-
-    # Create a chain to combine documents for question answering
-    # create_stuff_documents_chain feeds all retrieved context into the LLM
-    question_answer_chain = create_stuff_documents_chain(openAIClient, qa_prompt)
-
-    # Create a retrieval chain that combines the history-aware retriever and the question answering chain
-    rag_chain = create_retrieval_chain(history_aware_retriever, question_answer_chain)
-
-    response = rag_chain.invoke({"input": newInput, "chat_history": chatHistory})
+    ####--------Retrieve documents then append--------####
+    response = history_aware_retriever.invoke({"input": newInput, "chat_history": chatHistory})
 
     #append to the answer List
-    insightList.append({response['answer']})
+    sourceList.append(response)
 
-    return response['answer']
+    return response
 
-#############used for structuredTool.from_function#################
-class GetRelevantOutputArgs(BaseModel):
-    newInput: str = Field(description="most recent user input")
-    chatHistory: list = Field(description="chat history")
 
-"""
-Getting this error when using  StructuredTool.from_function I don't know how to solve it
 
-pydantic_core._pydantic_core.ValidationError: 1 validation error for GetRelevantOutputArgs
-chatHistory
-  Field required [type=missing, input_value={'newInput': '카페야",...response_metadata={})]'}, input_type=dict]
+def generateFinalOutput():
 
-If I use normal tools the Agent goes into infinite loop of thought chain, using getRelevantOutput nonstop 
-- I don't know if Structured tools will debug this error, but at least want to try.
+    #code to generate output 
 
-"""
+    finalOutput = sourceList
+
+    return finalOutput
+
 
 
 ####--------tools for the agent--------####
 tools = [
-    StructuredTool.from_function(
-        name="append relevant insight",
-        func=getRelevantOutput,
-        description="appends the specific advice for the latest question to a list that will be used in the final insight output. When given latest user input and chat history Returns String if done successfully. This tool has two separate parameters, one string and one list. they should not be comebined when returning action input. If this tool return a string, move on to the next thought",
-        args_schema=GetRelevantOutputArgs,
-    ),
-    # Tool(
-    #     name="append relevant insight",
-    #     func=getRelevantOutput,
-    #     description="appends the specific advice for the latest question to a list that will be used in the final insight output. When given latest user input and chat history Returns String if done successfully. If this tool return a string, move on to the next thought",
-    # ),
     Tool(
-        name="returns the list as a string",
-        func=listToString,
-        description="returns a string output when list is given"
+        name="append relevant sources",
+        func=getRelevantSources,
+        description="Gathers relevant document according to user input.",
     ),
     Tool(
-        name="get insight list",
-        func=getInsightList,
-        description="access the insight that were created by 'generate relevant insight', this should be used for the final insight output"
-    ),
+        name="generate final output",
+        func=generateFinalOutput,
+        description="generates final output for the user"
+    )
 ]
 ####--------tools end--------####
 
