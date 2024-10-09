@@ -141,7 +141,7 @@ def getRelevantSources(newInput, chatHistory=chatHistory):
     #append to the answer List
     sourceList.append(response)
 
-    return response
+    return response #파란 텍스트 부분
 
 
 
