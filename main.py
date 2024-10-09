@@ -18,6 +18,7 @@ from langchain.agents.format_scratchpad.openai_tools import format_to_openai_too
 from pinecone import Pinecone, ServerlessSpec
 from langchain_pinecone import PineconeVectorStore
 from langchain import hub
+from typing import Annotated, List
 
 
 #load env variables
@@ -106,7 +107,11 @@ def getSourceList():
     return sourceList
 
 
-def getRelevantSources(newInput, chatHistory=chatHistory):
+@tool("append relevant sources")
+def getRelevantSources(
+    newInput: Annotated[str, "most recent user input"], 
+    chatHistory: Annotated[List, "chat history"] = chatHistory):
+    """Gathers relevant document according to user input."""
 
     ####--------Creating vector store retrievor--------####
 
@@ -144,8 +149,10 @@ def getRelevantSources(newInput, chatHistory=chatHistory):
     return response #파란 텍스트 부분
 
 
-
-def generateFinalOutput():
+@tool("generate final output")
+def generateFinalOutput(
+    chatHistory: Annotated[List, "chat history"] = chatHistory):
+    """generates final output for the user"""
 
     #code to generate output 
 
@@ -154,19 +161,31 @@ def generateFinalOutput():
     return finalOutput
 
 
-
 ####--------tools for the agent--------####
 tools = [
-    Tool(
-        name="append relevant sources",
-        func=getRelevantSources,
-        description="Gathers relevant document according to user input.",
-    ),
-    Tool(
-        name="generate final output",
-        func=generateFinalOutput,
-        description="generates final output for the user"
-    )
+    getRelevantSources, generateFinalOutput
+    # Tool(
+    #     name="append relevant sources",
+    #     func=getRelevantSources,
+    #     description="Gathers relevant document according to user input.",
+    # ),
+    # Tool(
+    #     name="generate final output",
+    #     func=generateFinalOutput,
+    #     description="generates final output for the user",
+    # ),
+    # StructuredTool.from_function(
+    #     name="append relevant sources",
+    #     func=getRelevantSources,
+    #     description="Gathers relevant document according to user input.",
+    #     args_schema=GetRelevantSourceArgs,
+    # ),
+    # StructuredTool.from_function(
+    #     name="generate final output",
+    #     func=generateFinalOutput,
+    #     description="generates final output for the user",
+    #     args_schema=GenerateFinalOutputArgs,
+    # )
 ]
 ####--------tools end--------####
 
