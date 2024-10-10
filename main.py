@@ -107,11 +107,11 @@ def getSourceList():
     return sourceList
 
 
-@tool("append relevant sources")
+@tool("gather relevant sources")
 def getRelevantSources(
     newInput: Annotated[str, "most recent user input"], 
     chatHistory: Annotated[List, "chat history"] = chatHistory):
-    """Gathers relevant document according to user input."""
+    """Saves relevant document according to user input into the local memory. This memory will be used in generate final output"""
 
     ####--------Creating vector store retrievor--------####
 
@@ -146,13 +146,13 @@ def getRelevantSources(
     #append to the answer List
     sourceList.append(response)
 
-    return response #파란 텍스트 부분
+    return "Relevant sources are successfully saved in the memory" #파란 텍스트 부분
 
 
 @tool("generate final output")
 def generateFinalOutput(
     chatHistory: Annotated[List, "chat history"] = chatHistory):
-    """generates final output for the user"""
+    """generates final output for the user. Used when the question is over."""
 
     #code to generate output 
 
@@ -195,7 +195,7 @@ tools = [
 # creating prompt template
 agentSystemPrompt = ChatPromptTemplate.from_messages(
     [
-        ("system", prompt.reactAgentPrompt),
+        ("system", prompt.reactAgentPromptSimple),
         MessagesPlaceholder("chat_history"),
         ("human", "{input}"),
     ]
