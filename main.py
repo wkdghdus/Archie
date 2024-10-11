@@ -198,7 +198,7 @@ def main():
         contextCombined =  ""
 
         # Invoke the agent with the user input and the current chat history
-        response = agent_executor.invoke({"chat_history": chatHistory, "context": contextCombined, "input": userInput, "scratchpad": lambda x: create_scratchpad(intermediate_steps=x["intermediate_steps"])})
+        response = agent_executor.invoke({"chat_history": chatHistory, "context": contextCombined, "input": userInput, "agent_scratchpad": lambda x: create_scratchpad(intermediate_steps=x["intermediate_steps"])})
         print("아치:", response["output"])
 
         # Add the agent's response to the conversation memory
