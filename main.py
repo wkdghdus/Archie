@@ -10,7 +10,7 @@ from langchain.chains.history_aware_retriever import create_history_aware_retrie
 from langchain.chains.retrieval import create_retrieval_chain
 from langchain.chains.combine_documents import create_stuff_documents_chain
 from langchain_core.prompts import MessagesPlaceholder, ChatPromptTemplate, PromptTemplate
-from langchain_core.messages import BaseMessage
+from langchain_core.messages import BaseMessage, ToolCall, ToolMessage
 from langchain_core.agents import AgentAction, AgentFinish
 from pydantic import BaseModel, Field
 from langchain.tools import BaseTool, StructuredTool, tool, Tool
@@ -83,7 +83,7 @@ def getSourceList():
     return sourceList
 
 
-@tool("gather relevant sources")
+@tool("gather_relevant_sources")
 def getRelevantSources(
     newInput: Annotated[str, "most recent user input"], 
     chatHistory: Annotated[List, "chat history"] = chatHistory):
@@ -125,7 +125,7 @@ def getRelevantSources(
     return "Relevant sources are successfully saved in the memory" #파란 텍스트 부분
 
 
-@tool("generate final output")
+@tool("generate_final_output")
 def generateFinalOutput(
     chatHistory: Annotated[List, "chat history"] = chatHistory):
     """generates final output for the user. Used when the question is over."""
@@ -136,6 +136,42 @@ def generateFinalOutput(
 
     return finalOutput
 
+#enforcing formated output. 
+@tool("continue_conversation")
+def continueConversation(
+    reaction: str,
+    nextQuestion: str
+):
+    """Returns a natural language for question progression, those are consist of:
+    - `reaction`: a natural reaction to user's previous input to make the interaction feel natural and conversational
+    - `nextQuestion`: next question in the conversation according to the prompt. include examples along with the question.
+    """
+
+    return ""
+
+def run_oracle(state: list):
+    print("run_oracle")
+    print(f"intermediate_steps: {state['intermediate_steps']}")
+    out = decisionMaker.invoke(state)
+    tool_name = out.tool_calls[0]["name"]
+    tool_args = out.tool_calls[0]["args"]
+    action_out = AgentAction(
+        tool=tool_name,
+        tool_input=tool_args,
+        log="TBD"
+    )
+    return {
+        "intermediate_steps": [action_out]
+    }
+
+def router(state: list):
+    # return the tool name to use
+    if isinstance(state["intermediate_steps"], list):
+        return state["intermediate_steps"][-1].tool
+    else:
+        # if we output bad format go to final answer
+        print("Router invalid format")
+        return "final_answer"
 
 class AgentState(TypedDict):
     input: str
@@ -143,7 +179,7 @@ class AgentState(TypedDict):
     intermediate_steps: Annotated[list[tuple[AgentAction, str]], operator.add]
 
 ####--------tools for the agent--------####
-tools = [getRelevantSources, generateFinalOutput]
+tools = [getRelevantSources, generateFinalOutput, continueConversation]
 
 
 # define a function to transform intermediate_steps from list
@@ -179,11 +215,10 @@ decisionMaker = (
         ),
     }
     | agentSystemPrompt
-    | openAIClient.bind_tools(tools, tool_choice="auto",strict=True)
+    | openAIClient.bind_tools(tools, tool_choice="any")
 )
 
 ####--------creating agent ends--------####
-
 
 def main():
 
@@ -203,8 +238,8 @@ def main():
         contextCombined =  ""
 
         # Invoke the agent with the user input and the current chat history
-        response = decisionMaker.invoke({"chat_history": chatHistory, "context": contextCombined, "input": userInput, "intermediate_steps": [],})
-        print("아치:", response["output"])
+        response = decisionMaker.invoke({"chat_history": chatHistory, "input": userInput, "intermediate_steps": [],})
+        print("아치:" + response)
 
         # Add the agent's response to the conversation memory
         chatHistory.append(AIMessage(content=response["output"]))
