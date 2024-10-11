@@ -217,6 +217,19 @@ agent_executor = AgentExecutor.from_agent_and_tools(
 )
 ####--------creating agent ends--------####
 
+# define a function to transform intermediate_steps from list
+# of AgentAction to scratchpad string
+def create_scratchpad(intermediate_steps: list[AgentAction]):
+    research_steps = []
+    for i, action in enumerate(intermediate_steps):
+        if action.log != "TBD":
+            # this was the ToolExecution
+            research_steps.append(
+                f"Tool: {action.tool}, input: {action.tool_input}\n"
+                f"Output: {action.log}"
+            )
+    return "\n---\n".join(research_steps)
+
 
 def main():
 
