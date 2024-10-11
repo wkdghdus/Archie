@@ -169,32 +169,8 @@ class AgentState(TypedDict):
     intermediate_steps: Annotated[list[tuple[AgentAction, str]], operator.add]
 
 ####--------tools for the agent--------####
-tools = [
-    getRelevantSources, generateFinalOutput
-    # Tool(
-    #     name="append relevant sources",
-    #     func=getRelevantSources,
-    #     description="Gathers relevant document according to user input.",
-    # ),
-    # Tool(
-    #     name="generate final output",
-    #     func=generateFinalOutput,
-    #     description="generates final output for the user",
-    # ),
-    # StructuredTool.from_function(
-    #     name="append relevant sources",
-    #     func=getRelevantSources,
-    #     description="Gathers relevant document according to user input.",
-    #     args_schema=GetRelevantSourceArgs,
-    # ),
-    # StructuredTool.from_function(
-    #     name="generate final output",
-    #     func=generateFinalOutput,
-    #     description="generates final output for the user",
-    #     args_schema=GenerateFinalOutputArgs,
-    # )
-]
-####--------tools end--------####
+tools = [getRelevantSources, generateFinalOutput]
+
 
 # define a function to transform intermediate_steps from list
 # of AgentAction to scratchpad string
