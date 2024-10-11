@@ -10,15 +10,17 @@ from langchain.chains.history_aware_retriever import create_history_aware_retrie
 from langchain.chains.retrieval import create_retrieval_chain
 from langchain.chains.combine_documents import create_stuff_documents_chain
 from langchain_core.prompts import MessagesPlaceholder, ChatPromptTemplate, PromptTemplate
+from langchain_core.messages import BaseMessage
+from langchain_core.agents import AgentAction, AgentFinish
 from pydantic import BaseModel, Field
 from langchain.tools import BaseTool, StructuredTool, tool, Tool
 from langchain.memory import ConversationBufferMemory
 from langchain.agents import AgentExecutor, create_structured_chat_agent, create_react_agent, create_tool_calling_agent
-from langchain.agents.format_scratchpad.openai_tools import format_to_openai_tool_messages
 from pinecone import Pinecone, ServerlessSpec
 from langchain_pinecone import PineconeVectorStore
 from langchain import hub
-from typing import Annotated, List
+from typing import Annotated, List, TypedDict, Union
+import operator
 
 
 #load env variables
@@ -133,7 +135,7 @@ def getRelevantSources(
         ]
     )
 
-    # Create a history-aware retriever
+    # Create a history-aware retrieveri
     # This uses the LLM to help reformulate the question based on chat history
     history_aware_retriever = create_history_aware_retriever(
         openAIClient, retriever, contextualizeQprompt
@@ -160,6 +162,11 @@ def generateFinalOutput(
 
     return finalOutput
 
+
+class AgentState(TypedDict):
+    input: str
+    chat_history: list[BaseMessage]
+    intermediate_steps: Annotated[list[tuple[AgentAction, str]], operator.add]
 
 ####--------tools for the agent--------####
 tools = [
@@ -189,32 +196,33 @@ tools = [
 ]
 ####--------tools end--------####
 
+# define a function to transform intermediate_steps from list
+# of AgentAction to scratchpad string
+def create_scratchpad(intermediate_steps: list[AgentAction]):
+    research_steps = []
+    for i, action in enumerate(intermediate_steps):
+        if action.log != "TBD":
+            # this was the ToolExecution
+            research_steps.append(
+                f"Tool: {action.tool}, input: {action.tool_input}\n"
+                f"Output: {action.log}"
+            )
+    return "\n---\n".join(research_steps)
 
-####--------creating agent--------####
 
 # creating prompt template
-agentSystemPrompt = ChatPromptTemplate.from_messages(
-    [
-        ("system", prompt.reactAgentPromptSimple),
-        MessagesPlaceholder("chat_history"),
-        ("human", "{input}"),
-    ]
+decisionMaker = (
+    {
+        "input": lambda x: x["input"],
+        "chat_history": lambda x: x["chat_history"],
+        "scratchpad": lambda x: create_scratchpad(
+            intermediate_steps=x["intermediate_steps"]
+        ),
+    }
+    | prompt
+    | openAIClient.bind_tools(tools, tool_choice="auto",strict=True)
 )
 
-# test code
-# agentSystemPrompt = hub.pull("wkdghdus/archie")
-
-# create_structured_chat_agent initializes a chat agent designed to interact using a structured prompt and tools
-# It combines the language model (llm), tools, and prompt to create an interactive agent
-agent = create_react_agent(
-    llm = openAIClient,
-    tools = tools,
-    prompt = agentSystemPrompt,
-)
-
-agent_executor = AgentExecutor.from_agent_and_tools(
-    agent=agent, tools=tools, handle_parsing_errors=True, verbose=True, 
-)
 ####--------creating agent ends--------####
 
 
