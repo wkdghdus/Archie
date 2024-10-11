@@ -63,25 +63,21 @@ print("Initializing vectorstore")
 db = PineconeVectorStore(index= VECTORSTORE_INDEX, embedding=embeddings)
 print("Initializing Finished")
 
+#Init AgentState
+print("Initializing Agent")
+class AgentState(TypedDict):
+    input: str
+    chat_history: list[BaseMessage]
+    intermediate_steps: Annotated[list[tuple[AgentAction, str]], operator.add]
+print("Initializing Finished")
+
 sourceList = []    # list for needed documents (in chunks)
 chatHistory = []    # list for chat history
 
 ####--------initialization ends--------####
 
 
-####--------Functions--------####
-
-def listToString(docList):
-    ret = ""
-    for doc in docList:
-        ret = ret + doc
-    
-    return ret
-
-
-def getSourceList():
-    return sourceList
-
+####--------TOOLS FOR AGENT--------####
 
 @tool("gather_relevant_sources")
 def getRelevantSources(
@@ -89,7 +85,7 @@ def getRelevantSources(
     chatHistory: Annotated[List, "chat history"] = chatHistory):
     """Saves relevant document according to user input into the local memory. This memory will be used in generate final output"""
 
-    ####--------Creating vector store retrievor--------####
+    ####--------Creating vector store retriever--------####
 
     #vector store retriever
     #connected to scientific data vector db
@@ -123,6 +119,7 @@ def getRelevantSources(
     sourceList.append(response)
 
     return "Relevant sources are successfully saved in the memory" #파란 텍스트 부분
+    ####--------End function--------####
 
 
 @tool("generate_final_output")
@@ -149,8 +146,78 @@ def continueConversation(
 
     return ""
 
-def run_oracle(state: list):
-    print("run_oracle")
+#list of the tools used by LLM, will be passed as variables and parameters.
+tools = [getRelevantSources, generateFinalOutput, continueConversation]
+
+####--------TOOLS FOR AGENT ENDS --------####
+
+
+
+####--------HELPER FUNCTION--------####
+def listToString(docList):
+    ret = ""
+    for doc in docList:
+        ret = ret + doc
+    
+    return ret
+
+
+def getSourceList():
+    return sourceList
+####--------HELPER FUNCTION ENDS--------####
+
+
+
+####--------Creating decision maker--------####
+# define a function to transform intermediate_steps from list
+# of AgentAction to scratchpad string
+def create_scratchpad(intermediate_steps: list[AgentAction]):
+    steps = []
+    for i, action in enumerate(intermediate_steps):
+        if action.log != "TBD":
+            # this was the ToolExecution
+            steps.append(
+                f"Tool: {action.tool}, input: {action.tool_input}\n"
+                f"Output: {action.log}"
+            )
+    return "\n---\n".join(steps)
+
+# creating prompt template
+agentSystemPrompt = ChatPromptTemplate.from_messages(
+    [
+        ("system", prompt.decisionMakerPrompt),
+        MessagesPlaceholder("chat_history"),
+        ("human", "{input}"),
+        ("assistant", "scratch_pad: {scratch_pad}"),
+    ]
+)
+
+# creating decision maker
+decisionMaker = (
+    #input parameters
+    {
+        "input": lambda x: x["input"],
+        "chat_history": lambda x: x["chat_history"],
+        "scratch_pad": lambda x: create_scratchpad(
+            intermediate_steps=x["intermediate_steps"]
+        ),
+    }
+    #decision maker prompt template
+    | agentSystemPrompt
+    #prompt and input is passed to the llm that has access to tools and forced to use tools for every invokes (tool_choice="any")
+    | openAIClient.bind_tools(tools, tool_choice="any")
+)
+
+####--------creating Decision Maker ends--------####
+
+
+
+####--------Define Nodes for Graph--------####
+# pass the tool use decision to our router which will route the output to the chosen node component to run 
+# (we define these below) based on the out.tool_calls[0]["name"] value.
+#running decision maker.
+def runDecisionMaker(state: list):
+    print("run decision maker")
     print(f"intermediate_steps: {state['intermediate_steps']}")
     out = decisionMaker.invoke(state)
     tool_name = out.tool_calls[0]["name"]
@@ -164,6 +231,7 @@ def run_oracle(state: list):
         "intermediate_steps": [action_out]
     }
 
+#decision router
 def router(state: list):
     # return the tool name to use
     if isinstance(state["intermediate_steps"], list):
@@ -173,52 +241,33 @@ def router(state: list):
         print("Router invalid format")
         return "final_answer"
 
-class AgentState(TypedDict):
-    input: str
-    chat_history: list[BaseMessage]
-    intermediate_steps: Annotated[list[tuple[AgentAction, str]], operator.add]
+# All of our tools can be run using the same function logic, which we define with run_tool. 
+# The input parameters to our tool call and the resultant output are added to our graph state's intermediate_steps parameter.
 
-####--------tools for the agent--------####
-tools = [getRelevantSources, generateFinalOutput, continueConversation]
+tool_str_to_func = {
+    "gather_relevant_sources": getRelevantSources,
+    "generate_final_output": generateFinalOutput,
+    "continue_conversation": continueConversation,
+}
 
 
-# define a function to transform intermediate_steps from list
-# of AgentAction to scratchpad string
-def create_scratchpad(intermediate_steps: list[AgentAction]):
-    research_steps = []
-    for i, action in enumerate(intermediate_steps):
-        if action.log != "TBD":
-            # this was the ToolExecution
-            research_steps.append(
-                f"Tool: {action.tool}, input: {action.tool_input}\n"
-                f"Output: {action.log}"
-            )
-    return "\n---\n".join(research_steps)
+def run_tool(state: list):
+    # use this as helper function so we repeat less code
+    tool_name = state["intermediate_steps"][-1].tool
+    tool_args = state["intermediate_steps"][-1].tool_input
+    print(f"{tool_name}.invoke(input={tool_args})")
+    # run tool
+    out = tool_str_to_func[tool_name].invoke(input=tool_args)
+    action_out = AgentAction(
+        tool=tool_name,
+        tool_input=tool_args,
+        log=str(out)
+    )
+    return {"intermediate_steps": [action_out]}
 
-# creating prompt template
-agentSystemPrompt = ChatPromptTemplate.from_messages(
-    [
-        ("system", prompt.decisionMakerPrompt),
-        MessagesPlaceholder("chat_history"),
-        ("human", "{input}"),
-        ("assistant", "scratch_pad: {scratch_pad}"),
-    ]
-)
+####--------Define Nodes for Graph End--------####
 
-# creating prompt template
-decisionMaker = (
-    {
-        "input": lambda x: x["input"],
-        "chat_history": lambda x: x["chat_history"],
-        "scratch_pad": lambda x: create_scratchpad(
-            intermediate_steps=x["intermediate_steps"]
-        ),
-    }
-    | agentSystemPrompt
-    | openAIClient.bind_tools(tools, tool_choice="any")
-)
 
-####--------creating agent ends--------####
 
 def main():
 
@@ -239,7 +288,7 @@ def main():
 
         # Invoke the agent with the user input and the current chat history
         response = decisionMaker.invoke({"chat_history": chatHistory, "input": userInput, "intermediate_steps": [],})
-        print("아치:" + response)
+        print(response)
 
         # Add the agent's response to the conversation memory
         chatHistory.append(AIMessage(content=response["output"]))
