@@ -10,15 +10,18 @@ from langchain.chains.history_aware_retriever import create_history_aware_retrie
 from langchain.chains.retrieval import create_retrieval_chain
 from langchain.chains.combine_documents import create_stuff_documents_chain
 from langchain_core.prompts import MessagesPlaceholder, ChatPromptTemplate, PromptTemplate
+from langchain_core.messages import BaseMessage
+from langchain_core.agents import AgentAction, AgentFinish
 from pydantic import BaseModel, Field
 from langchain.tools import BaseTool, StructuredTool, tool, Tool
 from langchain.memory import ConversationBufferMemory
 from langchain.agents import AgentExecutor, create_structured_chat_agent, create_react_agent, create_tool_calling_agent
-from langchain.agents.format_scratchpad.openai_tools import format_to_openai_tool_messages
 from pinecone import Pinecone, ServerlessSpec
 from langchain_pinecone import PineconeVectorStore
 from langchain import hub
-from typing import Annotated, List
+from typing import Annotated, List, TypedDict, Union
+import operator
+
 
 
 #load env variables
@@ -64,36 +67,10 @@ print("Initializing Finished")
 sourceList = []    # list for needed documents (in chunks)
 chatHistory = []    # list for chat history
 
-###########for cloud chat history storing ##########
-# print("initializing chat history")
-# cloudChatHistory = FirestoreChatMessageHistory(
-#     session_id = SESSION_ID,
-#     collection = COLLECTION_NAME,
-#     client = firestoreClient,
-# )
-# print("initializing Finished")
-###########for cloud chat history storing ##########
-
 ####--------initialization ends--------####
 
 
 ####--------Functions--------####
-
-# # Retrieve the chat history from FirestoreChatMessageHistory and convert to list of base messages
-# def getCloudChatHistory(cloudChatHistory):
-#     # Initialize a ConversationBufferMemory
-#     memory = ConversationBufferMemory(return_messages=True)
-
-#     # Iterate over messages from cloud history and add to memory
-#     for entry in cloudChatHistory.messages:
-#         if entry["role"] == "user":
-#             memory.chat_memory.add_message(HumanMessage(content=entry["content"]))
-#         elif entry["role"] == "assistant":
-#             memory.chat_memory.add_message(AIMessage(content=entry["content"]))
-
-#     # Return the memory instance with all messages added
-#     return memory
-
 
 def listToString(docList):
     ret = ""
@@ -162,32 +139,7 @@ def generateFinalOutput(
 
 
 ####--------tools for the agent--------####
-tools = [
-    getRelevantSources, generateFinalOutput
-    # Tool(
-    #     name="append relevant sources",
-    #     func=getRelevantSources,
-    #     description="Gathers relevant document according to user input.",
-    # ),
-    # Tool(
-    #     name="generate final output",
-    #     func=generateFinalOutput,
-    #     description="generates final output for the user",
-    # ),
-    # StructuredTool.from_function(
-    #     name="append relevant sources",
-    #     func=getRelevantSources,
-    #     description="Gathers relevant document according to user input.",
-    #     args_schema=GetRelevantSourceArgs,
-    # ),
-    # StructuredTool.from_function(
-    #     name="generate final output",
-    #     func=generateFinalOutput,
-    #     description="generates final output for the user",
-    #     args_schema=GenerateFinalOutputArgs,
-    # )
-]
-####--------tools end--------####
+tools = [getRelevantSources, generateFinalOutput]
 
 
 ####--------creating agent--------####
@@ -195,16 +147,13 @@ tools = [
 # creating prompt template
 agentSystemPrompt = ChatPromptTemplate.from_messages(
     [
-        ("system", prompt.reactAgentPromptSimple),
+        ("system", prompt.reactAgentPrompt),
         MessagesPlaceholder("chat_history"),
         ("human", "{input}"),
     ]
 )
 
-# test code
-# agentSystemPrompt = hub.pull("wkdghdus/archie")
-
-# create_structured_chat_agent initializes a chat agent designed to interact using a structured prompt and tools
+# create_react_agent initializes a chat agent designed to interact using a structured prompt and tools
 # It combines the language model (llm), tools, and prompt to create an interactive agent
 agent = create_react_agent(
     llm = openAIClient,
@@ -249,7 +198,7 @@ def main():
         contextCombined =  ""
 
         # Invoke the agent with the user input and the current chat history
-        response = agent_executor.invoke({"chat_history": chatHistory, "context": contextCombined, "input": userInput})
+        response = agent_executor.invoke({"chat_history": chatHistory, "context": contextCombined, "input": userInput, "scratchpad": lambda x: create_scratchpad(intermediate_steps=x["intermediate_steps"])})
         print("아치:", response["output"])
 
         # Add the agent's response to the conversation memory
