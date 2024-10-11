@@ -19,6 +19,7 @@ from langchain.agents import AgentExecutor, create_structured_chat_agent, create
 from pinecone import Pinecone, ServerlessSpec
 from langchain_pinecone import PineconeVectorStore
 from langchain import hub
+from langgraph.graph import StateGraph, END
 from typing import Annotated, List, TypedDict, Union
 import operator
 
@@ -26,7 +27,7 @@ import operator
 #load env variables
 load_dotenv()
 
-####--------CONSTANTS/상수--------####
+####-------- CONSTANTS/상수 --------####
 #For OpenAI ChatGPT
 GPT_MODEL = "gpt-4o"
 GPT_TEMPERATURE = 0.1 #low temperature reduces possible randomness. #온도를 낮게 설정하여 무작위성을 최소화
@@ -43,10 +44,10 @@ VECTORSTORE_INDEX_NAME = "archie"
 VECTORSTORE_INDEX = PC.Index(VECTORSTORE_INDEX_NAME)
 print(VECTORSTORE_INDEX.describe_index_stats())
 
-####--------CONSTANTS/상수 ends--------####
+####-------- CONSTANTS/상수 ends --------####
 
 
-####--------initialization--------####
+####-------- initialization --------####
 print("initializing openAI GPT")
 #Init OpenAI model
 openAIClient = ChatOpenAI(model = GPT_MODEL, temperature = GPT_TEMPERATURE, max_tokens = MAX_TOKENS)
@@ -74,10 +75,10 @@ print("Initializing Finished")
 sourceList = []    # list for needed documents (in chunks)
 chatHistory = []    # list for chat history
 
-####--------initialization ends--------####
+####-------- initialization ends --------####
 
 
-####--------TOOLS FOR AGENT--------####
+####-------- DEFINE TOOLS FOR AGENT --------####
 
 @tool("gather_relevant_sources")
 def getRelevantSources(
@@ -121,11 +122,10 @@ def getRelevantSources(
     return "Relevant sources are successfully saved in the memory" #파란 텍스트 부분
     ####--------End function--------####
 
-
 @tool("generate_final_output")
 def generateFinalOutput(
     chatHistory: Annotated[List, "chat history"] = chatHistory):
-    """generates final output for the user. Used when the question is over."""
+    """generates final output for the user. Used when all the question is asked and answered."""
 
     #code to generate output 
 
@@ -149,11 +149,12 @@ def continueConversation(
 #list of the tools used by LLM, will be passed as variables and parameters.
 tools = [getRelevantSources, generateFinalOutput, continueConversation]
 
-####--------TOOLS FOR AGENT ENDS --------####
+####-------- DEFINING TOOLS FOR AGENT ENDS --------####
 
 
 
-####--------HELPER FUNCTION--------####
+####-------- HELPER FUNCTIONS --------####
+
 def listToString(docList):
     ret = ""
     for doc in docList:
@@ -161,14 +162,15 @@ def listToString(docList):
     
     return ret
 
-
 def getSourceList():
     return sourceList
+
 ####--------HELPER FUNCTION ENDS--------####
 
 
 
 ####--------Creating decision maker--------####
+
 # define a function to transform intermediate_steps from list
 # of AgentAction to scratchpad string
 def create_scratchpad(intermediate_steps: list[AgentAction]):
@@ -215,6 +217,7 @@ decisionMaker = (
 ####--------Define Nodes for Graph--------####
 # pass the tool use decision to our router which will route the output to the chosen node component to run 
 # (we define these below) based on the out.tool_calls[0]["name"] value.
+
 #running decision maker.
 def runDecisionMaker(state: list):
     print("run decision maker")
@@ -243,13 +246,11 @@ def router(state: list):
 
 # All of our tools can be run using the same function logic, which we define with run_tool. 
 # The input parameters to our tool call and the resultant output are added to our graph state's intermediate_steps parameter.
-
 tool_str_to_func = {
     "gather_relevant_sources": getRelevantSources,
     "generate_final_output": generateFinalOutput,
     "continue_conversation": continueConversation,
 }
-
 
 def run_tool(state: list):
     # use this as helper function so we repeat less code
@@ -268,6 +269,32 @@ def run_tool(state: list):
 ####--------Define Nodes for Graph End--------####
 
 
+
+####--------Define Graph --------####
+graph = StateGraph(AgentState)
+
+graph.add_node("Decision_Maker", runDecisionMaker)
+graph.add_node("gather_relevant_sources", run_tool)
+graph.add_node("generate_final_output", run_tool)
+graph.add_node("continue_conversation", run_tool)
+
+graph.set_entry_point("Decision_Maker")
+
+graph.add_conditional_edges(
+    source="Decision_Maker",  # where in graph to start
+    path=router,  # function to determine which node is called
+)
+
+
+# create edges from each tool back to the oracle
+for tool_obj in tools:
+    if tool_obj.name != "continue_conversation":
+        graph.add_edge(tool_obj.name, "Decison_Maker")
+
+# if anything goes to final answer, it must then move to END
+graph.add_edge("generate_final_output", END)
+
+chatClient = graph.compile()
 
 def main():
 
