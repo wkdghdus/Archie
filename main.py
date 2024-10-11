@@ -209,17 +209,26 @@ def create_scratchpad(intermediate_steps: list[AgentAction]):
             )
     return "\n---\n".join(research_steps)
 
+# creating prompt template
+agentSystemPrompt = ChatPromptTemplate.from_messages(
+    [
+        ("system", prompt.decisionMakerPrompt),
+        MessagesPlaceholder("chat_history"),
+        ("human", "{input}"),
+        ("assistant", "scratch_pad: {scratch_pad}"),
+    ]
+)
 
 # creating prompt template
 decisionMaker = (
     {
         "input": lambda x: x["input"],
         "chat_history": lambda x: x["chat_history"],
-        "scratchpad": lambda x: create_scratchpad(
+        "scratch_pad": lambda x: create_scratchpad(
             intermediate_steps=x["intermediate_steps"]
         ),
     }
-    | prompt
+    | agentSystemPrompt
     | openAIClient.bind_tools(tools, tool_choice="auto",strict=True)
 )
 
@@ -244,7 +253,7 @@ def main():
         contextCombined =  ""
 
         # Invoke the agent with the user input and the current chat history
-        response = agent_executor.invoke({"chat_history": chatHistory, "context": contextCombined, "input": userInput})
+        response = decisionMaker.invoke({"chat_history": chatHistory, "context": contextCombined, "input": userInput, "intermediate_steps": [],})
         print("아치:", response["output"])
 
         # Add the agent's response to the conversation memory
