@@ -66,36 +66,10 @@ print("Initializing Finished")
 sourceList = []    # list for needed documents (in chunks)
 chatHistory = []    # list for chat history
 
-###########for cloud chat history storing ##########
-# print("initializing chat history")
-# cloudChatHistory = FirestoreChatMessageHistory(
-#     session_id = SESSION_ID,
-#     collection = COLLECTION_NAME,
-#     client = firestoreClient,
-# )
-# print("initializing Finished")
-###########for cloud chat history storing ##########
-
 ####--------initialization ends--------####
 
 
 ####--------Functions--------####
-
-# # Retrieve the chat history from FirestoreChatMessageHistory and convert to list of base messages
-# def getCloudChatHistory(cloudChatHistory):
-#     # Initialize a ConversationBufferMemory
-#     memory = ConversationBufferMemory(return_messages=True)
-
-#     # Iterate over messages from cloud history and add to memory
-#     for entry in cloudChatHistory.messages:
-#         if entry["role"] == "user":
-#             memory.chat_memory.add_message(HumanMessage(content=entry["content"]))
-#         elif entry["role"] == "assistant":
-#             memory.chat_memory.add_message(AIMessage(content=entry["content"]))
-
-#     # Return the memory instance with all messages added
-#     return memory
-
 
 def listToString(docList):
     ret = ""
