@@ -1,5 +1,5 @@
 import os
-import prompt
+import My_Agent.utils.prompt as prompt
 from openai import OpenAI
 from dotenv import load_dotenv, find_dotenv
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
@@ -21,6 +21,7 @@ from langchain_pinecone import PineconeVectorStore
 from langchain import hub
 from langgraph.graph import StateGraph, END
 from typing import Annotated, List, TypedDict, Union
+import My_Agent.utils.prompt as prompt
 import operator
 
 
@@ -54,10 +55,10 @@ openAIClient = ChatOpenAI(model = GPT_MODEL, temperature = GPT_TEMPERATURE, max_
 embeddings = OpenAIEmbeddings(model="text-embedding-3-small")
 print("initializing finished")
 
-print("initializing firestore")
-#Init Firebase history storage
-firestoreClient = firestore.Client(project = PROJECT_ID)
-print("initializing Finished")
+# print("initializing firestore")
+# #Init Firebase history storage
+# firestoreClient = firestore.Client(project = PROJECT_ID)
+# print("initializing Finished")
 
 #init pincone/vector store 
 print("Initializing vectorstore")
@@ -270,7 +271,7 @@ def run_tool(state: list):
 
 
 
-####--------Define Graph --------####
+####-------- Define Graph --------####
 graph = StateGraph(AgentState)
 
 graph.add_node("Decision_Maker", runDecisionMaker)
@@ -289,43 +290,46 @@ graph.add_conditional_edges(
 # create edges from each tool back to the oracle
 for tool_obj in tools:
     if tool_obj.name != "continue_conversation":
-        graph.add_edge(tool_obj.name, "Decison_Maker")
+        graph.add_edge(tool_obj.name, "Decision_Maker")
 
 # if anything goes to final answer, it must then move to END
 graph.add_edge("generate_final_output", END)
 
 chatClient = graph.compile()
+####-------- Defining Graph Ends --------####
 
-def main():
 
-    print("-"*100)
-    print("아치: 안녕하세요! Hello!")
+# def main():
 
-    while True:
-        userInput = input("User: ")
+#     print("-"*100)
+#     print("아치: 안녕하세요! Hello!")
 
-        if userInput.lower() == "exit":
-            break
+#     while True:
+#         userInput = input("User: ")
+
+#         if userInput.lower() == "exit":
+#             break
         
-        # Add the user's message to the conversation memory
-        chatHistory.append(HumanMessage(content=userInput))
+#         # Add the user's message to the conversation memory
+#         chatHistory.append(HumanMessage(content=userInput))
 
-        # Define context separately if needed (e.g., additional information)
-        contextCombined =  ""
+#         # Define context separately if needed (e.g., additional information)
+#         contextCombined =  ""
 
-        # Invoke the agent with the user input and the current chat history
-        response = decisionMaker.invoke({"chat_history": chatHistory, "input": userInput, "intermediate_steps": [],})
-        print(response)
+#         # Invoke the agent with the user input and the current chat history
+#         response = chatClient.invoke({"chat_history": chatHistory, "input": userInput, "intermediate_steps": [],})
+#         print("-"*100)
+#         print(response)
 
-        # Add the agent's response to the conversation memory
-        chatHistory.append(AIMessage(content=response["output"]))
+#         # Add the agent's response to the conversation memory
+#         chatHistory.append(AIMessage(content=response))
 
-        #debugging code
-        #print(chatHistory.buffer_as_messages)
+#     #     debugging code
+#     #     print(chatHistory.buffer_as_messages)
         
-    # # add chat history to firebase firestore cloud 
-    # firestoreClient.add_messages(chatHistory)
+#     # # add chat history to firebase firestore cloud 
+#     # firestoreClient.add_messages(chatHistory)
 
-main()
+# main()
 
 

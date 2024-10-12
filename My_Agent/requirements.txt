@@ -1,5 +1,4 @@
-os
-dotenv
+python-dotenv
 langchain
 langchain_openai
 langchain_google_firestore

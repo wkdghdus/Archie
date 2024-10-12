@@ -38,7 +38,7 @@ def createVectorDB():
     vectorStore = PineconeVectorStore(index_name = indexName, embedding = embeddings)
 
     #iterate through all the PDF files in Data directory. 
-    directory = os.fsencode("Data")
+    directory = os.fsencode("../../Data")
         
     for file in os.listdir(directory):
         fileName = os.fsdecode(file)
