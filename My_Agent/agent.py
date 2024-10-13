@@ -145,9 +145,13 @@ def continueConversation(
     - `nextQuestion`: next question in the conversation according to the prompt. include examples along with the question.
     """
 
-    
+    fullResponse = reaction + nextQuestion
 
-    return ""
+    print("아치: " + fullResponse)
+
+    chatHistory.append(AIMessage(content= fullResponse))
+
+    return fullResponse
 
 #list of the tools used by LLM, will be passed as variables and parameters.
 tools = [getRelevantSources, generateFinalOutput, continueConversation]
@@ -222,26 +226,40 @@ decisionMaker = (
 # (we define these below) based on the out.tool_calls[0]["name"] value.
 
 #running decision maker.
+#this outputs the decision to use certain tool
 def runDecisionMaker(state: list):
-    print("run decision maker")
-    print(f"intermediate_steps: {state['intermediate_steps']}")
+
+    ##debug code
+    # print("run decision maker")
+    # print(f"intermediate_steps: {state['intermediate_steps']}")
+    ##debug code end
+
+    #invoke decision maker
     out = decisionMaker.invoke(state)
+
+    #assign tool and tool input variable as the first tool that decision maker invokes
     tool_name = out.tool_calls[0]["name"]
     tool_args = out.tool_calls[0]["args"]
+
+    #create action agent
     action_out = AgentAction(
         tool=tool_name,
         tool_input=tool_args,
         log="TBD"
     )
+
+    #return intermediate step that it should take next
     return {
         "intermediate_steps": [action_out]
     }
 
-#decision router
+#decision router that reads intermediate step and direct to the most recent call. 
 def router(state: list):
-    # return the tool name to use
+    # return the tool to use
     if isinstance(state["intermediate_steps"], list):
-        return state["intermediate_steps"][-1].tool
+        #look at the most recent intermidiate step made by runDecisionMaker 
+        # returns the name of it
+        return state["intermediate_steps"][-1].tool     
     else:
         # if we output bad format go to final answer
         print("Router invalid format")
@@ -255,18 +273,26 @@ tool_str_to_func = {
     "continue_conversation": continueConversation,
 }
 
+# 
 def run_tool(state: list):
-    # use this as helper function so we repeat less code
+    # parse the tool that should be used. Decision is made in runDecisionMaker prior
     tool_name = state["intermediate_steps"][-1].tool
     tool_args = state["intermediate_steps"][-1].tool_input
-    print(f"{tool_name}.invoke(input={tool_args})")
+
+    ##debug tool
+    #print(f"{tool_name}.invoke(input={tool_args})")     #print statement to just keep track
+    ##debug tool ends
+
     # run tool
     out = tool_str_to_func[tool_name].invoke(input=tool_args)
+
+    #from agent action to append to intermediate step
     action_out = AgentAction(
         tool=tool_name,
         tool_input=tool_args,
         log=str(out)
     )
+
     return {"intermediate_steps": [action_out]}
 
 ####--------Define Nodes for Graph End--------####
@@ -288,50 +314,19 @@ graph.add_conditional_edges(
     path=router,  # function to determine which node is called
 )
 
+graph.add_edge("gather_relevant_sources", "Decision_Maker")
 
 # create edges from each tool back to the oracle
-for tool_obj in tools:
-    if tool_obj.name != "continue_conversation":
-        graph.add_edge(tool_obj.name, "Decision_Maker")
+#use this code when you add more nodes later in production.
+# for tool_obj in tools:
+#     if (tool_obj.name != "generate_final_output") and (tool_obj.name != "continue_conversation"):
+#         graph.add_edge(tool_obj.name, "Decision_Maker")
 
-# if anything goes to final answer, it must then move to END
+# if anything goes to final answer or continue conversation, move to END
+graph.add_edge("continue_conversation", END)
 graph.add_edge("generate_final_output", END)
 
 chatClient = graph.compile()
 ####-------- Defining Graph Ends --------####
-
-
-# def main():
-
-#     print("-"*100)
-#     print("아치: 안녕하세요! Hello!")
-
-#     while True:
-#         userInput = input("User: ")
-
-#         if userInput.lower() == "exit":
-#             break
-        
-#         # Add the user's message to the conversation memory
-#         chatHistory.append(HumanMessage(content=userInput))
-
-#         # Define context separately if needed (e.g., additional information)
-#         contextCombined =  ""
-
-#         # Invoke the agent with the user input and the current chat history
-#         response = chatClient.invoke({"chat_history": chatHistory, "input": userInput, "intermediate_steps": [],})
-#         print("-"*100)
-#         print(response)
-
-#         # Add the agent's response to the conversation memory
-#         chatHistory.append(AIMessage(content=response))
-
-#     #     debugging code
-#     #     print(chatHistory.buffer_as_messages)
-        
-#     # # add chat history to firebase firestore cloud 
-#     # firestoreClient.add_messages(chatHistory)
-
-# main()
 
 
