@@ -40,3 +40,14 @@ Your task is to generate accurate and coherent queries based on the latest avail
 
 
 """
+
+finalOutputPrompt = """
+
+You are a friendly interior design expert and your job is to provide an insight based on the resources you are given. You are given two resources, the chat history with the client, and the library of relevant information. 
+When outputting the insight, you must site the source of information. Make sure to output all categories shortly and concisely.
+
+Chat history: {chat_history}
+Insight List: {insight}
+
+
+"""
