@@ -12,14 +12,15 @@ from langchain.chains.combine_documents import create_stuff_documents_chain
 from langchain_core.prompts import MessagesPlaceholder, ChatPromptTemplate, PromptTemplate
 from langchain_core.messages import BaseMessage, ToolCall, ToolMessage
 from langchain_core.agents import AgentAction, AgentFinish
+from langchain_core.output_parsers import StrOutputParser
 from pydantic import BaseModel, Field
 from langchain.tools import BaseTool, StructuredTool, tool, Tool
 from langchain.memory import ConversationBufferMemory
-from langchain.agents import AgentExecutor, create_structured_chat_agent, create_react_agent, create_tool_calling_agent
 from pinecone import Pinecone, ServerlessSpec
 from langchain_pinecone import PineconeVectorStore
 from langchain import hub
 from langgraph.graph import StateGraph, END
+from langgraph.prebuilt import create_react_agent
 from typing import Annotated, List, TypedDict, Union
 import My_Agent.utils.prompt as prompt
 import operator
@@ -118,21 +119,32 @@ def getRelevantSources(
     response = history_aware_retriever.invoke({"input": newInput, "chat_history": chatHistory})
 
     #append to the answer List
-    sourceList.append(response)
+    for doc in response:
+        sourceList.append(doc)
 
     return "Relevant sources are successfully saved in the memory" #파란 텍스트 부분
     ####--------End function--------####
 
 @tool("generate_final_output")
 def generateFinalOutput(
-    chatHistory: Annotated[List, "chat history"] = chatHistory):
+    finalChatHistory: Annotated[List, "chat history"] = chatHistory):
     """generates final output for the user. Used when all the question is asked and answered."""
 
-    #code to generate output 
+    parser = StrOutputParser()
 
-    finalOutput = sourceList
+    finalOutputPrompt = ChatPromptTemplate.from_messages(
+        [
+            ("system", prompt.finalOutputPrompt),
+        ]
+    )
 
-    return finalOutput
+    finalChain = create_stuff_documents_chain(llm=openAIClient, prompt=finalOutputPrompt)
+
+    response = finalChain.invoke({"chat_history": finalChatHistory, "context": sourceList})
+
+    print(response)
+
+
 
 #enforcing formated output. 
 @tool("continue_conversation")
@@ -145,7 +157,7 @@ def continueConversation(
     - `nextQuestion`: next question in the conversation according to the prompt. include examples along with the question.
     """
 
-    fullResponse = reaction + nextQuestion
+    fullResponse = reaction + " " + nextQuestion
 
     print("아치: " + fullResponse)
 
@@ -165,8 +177,7 @@ tools = [getRelevantSources, generateFinalOutput, continueConversation]
 def listToString(docList):
     ret = ""
     for doc in docList:
-        ret = ret + doc
-    
+        ret = ret + doc.toString()
     return ret
 
 def getSourceList():
