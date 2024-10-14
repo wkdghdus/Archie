@@ -46,6 +46,12 @@ VECTORSTORE_INDEX_NAME = "archie"
 VECTORSTORE_INDEX = PC.Index(VECTORSTORE_INDEX_NAME)
 print(VECTORSTORE_INDEX.describe_index_stats())
 
+PC2 = Pinecone()
+FURNITURE_VECTORSTORE_INDEX_NAME = "products"
+FURNITURE_VECTORSTORE_INDEX = PC2.Index(FURNITURE_VECTORSTORE_INDEX_NAME)
+print(FURNITURE_VECTORSTORE_INDEX.describe_index_stats())
+
+
 ####-------- CONSTANTS/상수 ends --------####
 
 
@@ -62,8 +68,12 @@ print("initializing finished")
 # print("initializing Finished")
 
 #init pincone/vector store 
-print("Initializing vectorstore")
-db = PineconeVectorStore(index= VECTORSTORE_INDEX, embedding=embeddings)
+print("Initializing scientific vectorstore")
+scienceDB = PineconeVectorStore(index= VECTORSTORE_INDEX, embedding=embeddings)
+print("Initializing Finished")
+
+print("Initializing furniture vectorstore")
+furnitureDB = PineconeVectorStore(index= FURNITURE_VECTORSTORE_INDEX, embedding=embeddings)
 print("Initializing Finished")
 
 #Init AgentState
@@ -75,18 +85,15 @@ class AgentState(TypedDict):
 print("Initializing Finished")
 
 sourceList = []    # list for needed documents (in chunks)
+furnitureList = [] #list of suggested furniture
 chatHistory = []    # list for chat history
 
 ####-------- initialization ends --------####
 
+####-------- HELPER FUNCTIONS --------####
 
-####-------- DEFINE TOOLS FOR AGENT --------####
+def createHistoryRetriever(prompt, db):
 
-@tool("gather_relevant_sources")
-def getRelevantSources(
-    newInput: Annotated[str, "most recent user input"], 
-    chatHistory: Annotated[List, "chat history"] = chatHistory):
-    """Saves relevant document according to user input into the local memory. This memory will be used in generate final output"""
 
     ####--------Creating vector store retriever--------####
 
@@ -94,15 +101,10 @@ def getRelevantSources(
     #connected to scientific data vector db
     retriever = db.as_retriever()
 
-    # Contextualize question prompt
-    # This system prompt helps the AI understand that it should reformulate the question
-    # based on the chat history to make it a standalone question
-    contextualizeQSystemPrompt = prompt.contextual_q_system_prompt
-
     # Create a prompt template for contextualizing questions
     contextualizeQprompt = ChatPromptTemplate.from_messages(
         [
-            ("system", contextualizeQSystemPrompt),
+            ("system", prompt),
             MessagesPlaceholder("chat_history"),
             ("human", "{input}"),
         ]
@@ -113,7 +115,23 @@ def getRelevantSources(
     history_aware_retriever = create_history_aware_retriever(
         openAIClient, retriever, contextualizeQprompt
     )
+
+    return history_aware_retriever
     ####--------Retriever creation ends--------####
+    
+
+####--------HELPER FUNCTION ENDS--------####
+
+####-------- DEFINE TOOLS FOR AGENT --------####
+
+@tool("gather_relevant_sources")
+def getRelevantSources(
+    newInput: Annotated[str, "most recent user input"], 
+    chatHistory: Annotated[List, "chat history"] = chatHistory):
+    """Saves relevant document according to user input into the local memory. This memory will be used in generate final output"""
+
+    #create retriever 
+    history_aware_retriever  = createHistoryRetriever(prompt.contextual_q_system_prompt, scienceDB)
 
     ####--------Retrieve documents then append--------####
     response = history_aware_retriever.invoke({"input": newInput, "chat_history": chatHistory})
@@ -122,15 +140,13 @@ def getRelevantSources(
     for doc in response:
         sourceList.append(doc)
 
-    return "Relevant sources are successfully saved in the memory" #파란 텍스트 부분
+    return "Relevant sources are successfully saved in the memory"
     ####--------End function--------####
 
 @tool("generate_final_output")
 def generateFinalOutput(
     finalChatHistory: Annotated[List, "chat history"] = chatHistory):
     """generates final output for the user. Used when all the question is asked and answered."""
-
-    parser = StrOutputParser()
 
     finalOutputPrompt = ChatPromptTemplate.from_messages(
         [
@@ -141,6 +157,8 @@ def generateFinalOutput(
     finalChain = create_stuff_documents_chain(llm=openAIClient, prompt=finalOutputPrompt)
 
     response = finalChain.invoke({"chat_history": finalChatHistory, "context": sourceList})
+    
+    chatHistory.append(AIMessage(content=response))
 
     print(response)
 
@@ -165,26 +183,42 @@ def continueConversation(
 
     return fullResponse
 
+
+@tool("generate_furniture_suggestion")
+def generateFurnitureSuggestion(
+    newInput: Annotated[str, "most recent user input"],
+    finalChatHistory: Annotated[List, "chat history"] = chatHistory):
+    """generates furniture suggestion for the user based on the insight given previously. Do not use before outputting the final insight."""
+
+
+     #create retriever 
+    history_aware_retriever  = createHistoryRetriever(prompt.contextual_q_system_prompt_furniture, furnitureDB)
+
+    response = history_aware_retriever.invoke({"chat_history": finalChatHistory})
+
+    #append to the furniture List
+    for furniture in response:
+        furnitureList.append(furniture)
+
+    outputPrompt = ChatPromptTemplate.from_messages(
+        [
+            ("system", prompt.furnitureSuggestionOutput),
+        ]
+    )
+
+    finalChain = create_stuff_documents_chain(llm=openAIClient, prompt=outputPrompt)
+
+    response = finalChain.invoke({"chat_history": finalChatHistory, "context": sourceList})
+
+    chatHistory.append(AIMessage(content=response))
+
+    print(response)
+
+
 #list of the tools used by LLM, will be passed as variables and parameters.
-tools = [getRelevantSources, generateFinalOutput, continueConversation]
+tools = [getRelevantSources, generateFinalOutput, continueConversation, generateFurnitureSuggestion]
 
 ####-------- DEFINING TOOLS FOR AGENT ENDS --------####
-
-
-
-####-------- HELPER FUNCTIONS --------####
-
-def listToString(docList):
-    ret = ""
-    for doc in docList:
-        ret = ret + doc.toString()
-    return ret
-
-def getSourceList():
-    return sourceList
-
-####--------HELPER FUNCTION ENDS--------####
-
 
 
 ####--------Creating decision maker--------####
@@ -282,9 +316,10 @@ tool_str_to_func = {
     "gather_relevant_sources": getRelevantSources,
     "generate_final_output": generateFinalOutput,
     "continue_conversation": continueConversation,
+    "generate_furniture_suggestion": generateFurnitureSuggestion
 }
 
-# 
+
 def run_tool(state: list):
     # parse the tool that should be used. Decision is made in runDecisionMaker prior
     tool_name = state["intermediate_steps"][-1].tool
@@ -317,6 +352,8 @@ graph.add_node("Decision_Maker", runDecisionMaker)
 graph.add_node("gather_relevant_sources", run_tool)
 graph.add_node("generate_final_output", run_tool)
 graph.add_node("continue_conversation", run_tool)
+graph.add_node("generate_furniture_suggestion", run_tool)
+
 
 graph.set_entry_point("Decision_Maker")
 
@@ -326,16 +363,15 @@ graph.add_conditional_edges(
 )
 
 graph.add_edge("gather_relevant_sources", "Decision_Maker")
+graph.add_edge("generate_furniture_suggestion", END)
+graph.add_edge("continue_conversation", END)
+graph.add_edge("generate_final_output", END)
 
 # create edges from each tool back to the oracle
 #use this code when you add more nodes later in production.
 # for tool_obj in tools:
 #     if (tool_obj.name != "generate_final_output") and (tool_obj.name != "continue_conversation"):
 #         graph.add_edge(tool_obj.name, "Decision_Maker")
-
-# if anything goes to final answer or continue conversation, move to END
-graph.add_edge("continue_conversation", END)
-graph.add_edge("generate_final_output", END)
 
 chatClient = graph.compile()
 ####-------- Defining Graph Ends --------####
