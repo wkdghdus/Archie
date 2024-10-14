@@ -1,4 +1,5 @@
 import os
+from dotenv import load_dotenv
 # from openai import OpenAI
 # from dotenv import load_dotenv, find_dotenv
 # from pinecone import Pinecone
@@ -7,15 +8,15 @@ from langchain_pinecone import PineconeVectorStore
 from langchain_openai import OpenAIEmbeddings
 from langchain_text_splitters import CharacterTextSplitter
 
-
+load_dotenv()
 #API KEY ASSIGNMENT
-OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")       #openAI API key
+# OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")       #openAI API key
 #PINECONE_API_KEY = os.getenv('PINECONE_API_KEY')        #PineCone API key
 
 indexName = "archie"
 
 #embedding model using langchain OpenAIEmbeddings, model is text-embedding-3-small
-embeddings = OpenAIEmbeddings(openai_api_key= OPENAI_API_KEY, model = "text-embedding-3-small")
+embeddings = OpenAIEmbeddings( model = "text-embedding-3-small")
 
 #text splitter to split PDF contents into smaller chunks
 textSplitter = CharacterTextSplitter(chunk_size=1000, chunk_overlap=0)
@@ -28,8 +29,8 @@ def loadDocAndAddEmbed(source, vectorStoreFromDoc):
         data = loader.load()
         docs = textSplitter.split_documents(data)
         vectorStoreFromDoc.add_documents(docs)
-    except:
-        print(Exception.with_traceback)
+    except Exception as ex:
+        print(Exception.with_traceback,ex)
         print("Failed to add embedding: "+ source)
 
 

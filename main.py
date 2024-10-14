@@ -1,24 +1,17 @@
-import os
-import prompt
-from openai import OpenAI
-from dotenv import load_dotenv, find_dotenv
-from langchain_openai import ChatOpenAI, OpenAIEmbeddings
-from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
-from google.cloud import firestore
-from langchain_google_firestore import FirestoreChatMessageHistory
-from langchain.chains.history_aware_retriever import create_history_aware_retriever
-from langchain.chains.retrieval import create_retrieval_chain
-from langchain.chains.combine_documents import create_stuff_documents_chain
-from langchain_core.prompts import MessagesPlaceholder, ChatPromptTemplate, PromptTemplate
-from pydantic import BaseModel, Field
-from langchain.tools import BaseTool, StructuredTool, tool, Tool
-from langchain.memory import ConversationBufferMemory
-from langchain.agents import AgentExecutor, create_structured_chat_agent, create_react_agent, create_tool_calling_agent
-from langchain.agents.format_scratchpad.openai_tools import format_to_openai_tool_messages
-from pinecone import Pinecone, ServerlessSpec
-from langchain_pinecone import PineconeVectorStore
-from langchain import hub
 
+from typing import Annotated, List
+
+from dotenv import load_dotenv
+from langchain.agents import AgentExecutor, create_tool_calling_agent
+from langchain.tools import tool
+from langchain_core.messages import AIMessage, HumanMessage
+from langchain_core.prompts import MessagesPlaceholder, ChatPromptTemplate
+from langchain_core.tools import create_retriever_tool
+from langchain_openai import ChatOpenAI, OpenAIEmbeddings
+from langchain_pinecone import PineconeVectorStore
+from pinecone import Pinecone
+
+import prompt
 
 #load env variables
 load_dotenv()
@@ -36,7 +29,7 @@ COLLECTION_NAME = "chat_history"
 
 #for pinecone vector store
 PC = Pinecone()
-VECTORSTORE_INDEX_NAME = "archie"
+VECTORSTORE_INDEX_NAME = "products"
 VECTORSTORE_INDEX = PC.Index(VECTORSTORE_INDEX_NAME)
 print(VECTORSTORE_INDEX.describe_index_stats())
 
@@ -47,13 +40,9 @@ print(VECTORSTORE_INDEX.describe_index_stats())
 print("initializing openAI GPT")
 #Init OpenAI model
 openAIClient = ChatOpenAI(model = GPT_MODEL, temperature = GPT_TEMPERATURE, max_tokens = MAX_TOKENS)
-embeddings = OpenAIEmbeddings(model="text-embedding-3-small")
+embeddings = OpenAIEmbeddings(model="text-embedding-ada-002")
 print("initializing finished")
 
-print("initializing firestore")
-#Init Firebase history storage
-firestoreClient = firestore.Client(project = PROJECT_ID)
-print("initializing Finished")
 
 #init pincone/vector store 
 print("Initializing vectorstore")
@@ -92,7 +81,17 @@ chatHistory = []    # list for chat history
 
 #     # Return the memory instance with all messages added
 #     return memory
+@tool("productSearch")
+def getRelevantSources(newInput):
+    """use this tool to search product"""
+    ####--------Creating vector store retrievor--------####
 
+    #vector store retriever
+    #connected to scientific data vector db
+    retriever = db.as_retriever()
+
+
+    return retriever.invoke(input=newInput) #파란 텍스트 부분
 
 def listToString(docList):
     ret = ""
@@ -106,46 +105,17 @@ def getSourceList():
     return sourceList
 
 
-def getRelevantSources(newInput, chatHistory=chatHistory):
-
-    ####--------Creating vector store retrievor--------####
-
-    #vector store retriever
-    #connected to scientific data vector db
-    retriever = db.as_retriever()
-
-    # Contextualize question prompt
-    # This system prompt helps the AI understand that it should reformulate the question
-    # based on the chat history to make it a standalone question
-    contextualizeQSystemPrompt = prompt.contextual_q_system_prompt
-
-    # Create a prompt template for contextualizing questions
-    contextualizeQprompt = ChatPromptTemplate.from_messages(
-        [
-            ("system", contextualizeQSystemPrompt),
-            MessagesPlaceholder("chat_history"),
-            ("human", "{input}"),
-        ]
-    )
-
-    # Create a history-aware retriever
-    # This uses the LLM to help reformulate the question based on chat history
-    history_aware_retriever = create_history_aware_retriever(
-        openAIClient, retriever, contextualizeQprompt
-    )
-    ####--------Retriever creation ends--------####
-
-    ####--------Retrieve documents then append--------####
-    response = history_aware_retriever.invoke({"input": newInput, "chat_history": chatHistory})
-
-    #append to the answer List
-    sourceList.append(response)
-
-    return response #파란 텍스트 부분
+retriever = db.as_retriever()
+retriever_tool = create_retriever_tool(
+    retriever,
+    name="productSearch",  # 도구의 이름을 입력합니다.
+    description="use this tool to search product",  # 도구에 대한 설명을 자세히 기입해야 합니다!!
+)
 
 
-
+@tool("generatefinaloutput")
 def generateFinalOutput():
+    """generates final output for the user"""
 
     #code to generate output 
 
@@ -154,19 +124,10 @@ def generateFinalOutput():
     return finalOutput
 
 
-
 ####--------tools for the agent--------####
 tools = [
-    Tool(
-        name="append relevant sources",
-        func=getRelevantSources,
-        description="Gathers relevant document according to user input.",
-    ),
-    Tool(
-        name="generate final output",
-        func=generateFinalOutput,
-        description="generates final output for the user"
-    )
+    retriever_tool
+
 ]
 ####--------tools end--------####
 
@@ -179,15 +140,12 @@ agentSystemPrompt = ChatPromptTemplate.from_messages(
         ("system", prompt.reactAgentPrompt),
         MessagesPlaceholder("chat_history"),
         ("human", "{input}"),
+        ("placeholder","{tool_names}")
     ]
 )
 
-# test code
-# agentSystemPrompt = hub.pull("wkdghdus/archie")
+agent = create_tool_calling_agent(
 
-# create_structured_chat_agent initializes a chat agent designed to interact using a structured prompt and tools
-# It combines the language model (llm), tools, and prompt to create an interactive agent
-agent = create_react_agent(
     llm = openAIClient,
     tools = tools,
     prompt = agentSystemPrompt,
