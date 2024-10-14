@@ -31,7 +31,7 @@ load_dotenv()
 
 ####-------- CONSTANTS/상수 --------####
 #For OpenAI ChatGPT
-GPT_MODEL = "gpt-4o"
+GPT_MODEL = "gpt-4o-mini"
 GPT_TEMPERATURE = 0.1 #low temperature reduces possible randomness. #온도를 낮게 설정하여 무작위성을 최소화
 MAX_TOKENS = 1000
 
@@ -194,7 +194,7 @@ def generateFurnitureSuggestion(
      #create retriever 
     history_aware_retriever  = createHistoryRetriever(prompt.contextual_q_system_prompt_furniture, furnitureDB)
 
-    response = history_aware_retriever.invoke({"chat_history": finalChatHistory})
+    response = history_aware_retriever.invoke({"chat_history": finalChatHistory, "input": newInput})
 
     #append to the furniture List
     for furniture in response:
