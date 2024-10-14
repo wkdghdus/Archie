@@ -31,7 +31,7 @@ load_dotenv()
 
 ####-------- CONSTANTS/상수 --------####
 #For OpenAI ChatGPT
-GPT_MODEL = "gpt-4o"
+GPT_MODEL = "gpt-4o-mini"
 GPT_TEMPERATURE = 0.1 #low temperature reduces possible randomness. #온도를 낮게 설정하여 무작위성을 최소화
 MAX_TOKENS = 1000
 
